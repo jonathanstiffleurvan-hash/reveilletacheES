@@ -1,0 +1,10 @@
+{
+  "appId": "com.reveil.taches",
+  "appName": "Réveil des tâches",
+  "webDir": "www",
+  "plugins": {
+    "LocalNotifications": {
+      "iconColor": "#0D7357"
+    }
+  }
+}

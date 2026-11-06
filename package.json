@@ -1,0 +1,17 @@
+{
+  "name": "reveil-taches",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Réveil dont chaque alarme porte le nom de la chose à faire",
+  "scripts": {
+    "android:prepare": "cap add android && node scripts/patch-android.mjs && cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/local-notifications": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.0.0"
+  }
+}

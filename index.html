@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Réveil des tâches</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Mise en page : une colonne étroite, l'horloge en haut, le formulaire puis la liste des réveils; la sonnerie couvre tout l'écran. */
+:root {
+  --bg: #f1f4f2;
+  --surface: #ffffff;
+  --fg: #13201b;
+  --muted: #566660;
+  --line: #d3dcd8;
+  --accent: #0d7357;
+  --accent-fg: #ffffff;
+  --ring-bg: #b93c07;
+  --ring-fg: #ffffff;
+  --font-display: "Bricolage Grotesque", "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-body: "Bricolage Grotesque", "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1412;
+    --surface: #151f1c;
+    --fg: #e6eeea;
+    --muted: #93a49d;
+    --line: #26352f;
+    --accent: #3ddba5;
+    --accent-fg: #07211a;
+    --ring-bg: #ff8a3d;
+    --ring-fg: #1d0d02;
+    color-scheme: dark;
+  }
+}
+[hidden] { display: none !important; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { text-size-adjust: 100%; -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.45;
+  padding-block: 24px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+/* Dans l'application Android, l'écran passe sous la barre d'état : on garde de la marge en haut et en bas. */
+.native body {
+  padding-top: max(48px, calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 20px));
+  padding-bottom: max(48px, calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 20px));
+}
+.app { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+h2 { font-family: var(--font-display); font-size: 1.15rem; margin: 0 0 12px; text-wrap: balance; }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.native .web-only { display: none; }
+
+.clock-card { display: flex; flex-direction: column; gap: 6px; }
+.date { margin: 0; color: var(--muted); text-transform: capitalize; letter-spacing: .02em; }
+.clock { margin: 0; font-family: var(--font-mono); font-weight: 500; font-size: clamp(3.4rem, 17vw, 5.2rem); line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.clock .sec { color: var(--muted); font-size: .5em; letter-spacing: 0; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.pill { font-size: .85rem; color: var(--muted); padding: 6px 0; margin-right: auto; min-width: 0; flex: 1 1 180px; }
+.pill.ok { color: var(--accent); }
+.btn-ghost { background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: .9rem; }
+.btn-ghost[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+form { display: flex; flex-direction: column; gap: 14px; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field label, legend { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 0; }
+input[type="time"], input[type="text"] {
+  font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 12px 14px; width: 100%; min-width: 0;
+}
+input[type="time"] { font-family: var(--font-mono); font-size: 1.6rem; }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.days { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.day { position: relative; }
+.day input { position: absolute; opacity: 0; pointer-events: none; }
+.day span {
+  display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--bg); font-size: .9rem; user-select: none; cursor: pointer;
+}
+.day input:checked + span { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 700; }
+.day input:focus-visible + span { outline: 3px solid var(--accent); outline-offset: 2px; }
+.hint { margin: 0; color: var(--muted); font-size: .85rem; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn-main { background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 10px; padding: 12px 20px; font-weight: 700; }
+.btn-main:hover { filter: brightness(1.06); }
+
+ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.alarm { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; grid-template-columns: auto 1fr auto; gap: 4px 14px; align-items: center; }
+.alarm.off .when, .alarm.off .what { opacity: .5; }
+.when { font-family: var(--font-mono); font-size: 1.9rem; font-weight: 500; font-variant-numeric: tabular-nums; grid-row: span 2; }
+.what { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.meta { color: var(--muted); font-size: .85rem; grid-column: 2; min-width: 0; }
+.tag { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; margin-left: 6px; color: var(--muted); font-weight: 500; }
+.switch { grid-row: span 2; grid-column: 3; width: 52px; height: 30px; border-radius: 15px; border: 1px solid var(--line); background: var(--bg); position: relative; padding: 0; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--muted); transition: transform .15s, background .15s; }
+.switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
+.switch[aria-checked="true"]::after { transform: translateX(22px); background: var(--accent-fg); }
+.row-actions { grid-column: 1 / -1; display: flex; gap: 16px; padding-top: 6px; border-top: 1px solid var(--line); margin-top: 6px; }
+.link { background: none; border: 0; padding: 4px 0; color: var(--accent); font-size: .9rem; text-decoration: underline; text-underline-offset: 3px; }
+.link.danger { color: var(--muted); }
+.empty { color: var(--muted); margin: 0; padding: 18px; border: 1px dashed var(--line); border-radius: 14px; }
+.note { color: var(--muted); font-size: .85rem; margin: 0; }
+
+.ring { position: fixed; inset: 0; z-index: 50; background: var(--ring-bg); color: var(--ring-fg); display: flex; flex-direction: column; justify-content: center; gap: 18px; overflow-y: auto;
+  padding-block: max(24px, env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+.native .ring { padding-top: max(48px, calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 20px)); padding-bottom: max(48px, calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 20px)); }
+.ring-inner { max-width: 640px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+.ring-time { font-family: var(--font-mono); font-size: 1.1rem; letter-spacing: .12em; text-transform: uppercase; margin: 0; }
+.ring-label { font-family: var(--font-display); font-weight: 700; font-size: clamp(2.2rem, 11vw, 4.4rem); line-height: 1.05; margin: 0; text-wrap: balance; overflow-wrap: anywhere; }
+.ring-more { margin: 0; font-size: 1.1rem; }
+.ring-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.ring-actions button { border-radius: 12px; padding: 16px 22px; font-weight: 700; font-size: 1.05rem; border: 2px solid var(--ring-fg); }
+.ring-stop { background: var(--ring-fg); color: var(--ring-bg); }
+.ring-snooze { background: transparent; color: var(--ring-fg); }
+.ring-actions button:focus-visible { outline: 3px solid var(--ring-fg); outline-offset: 3px; }
+@media (prefers-reduced-motion: no-preference) {
+  .ring-label { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.02); } }
+}
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="clock-card">
+    <p class="date" id="date"></p>
+    <p class="clock" id="clock" aria-live="off">00:00<span class="sec">:00</span></p>
+    <div class="tools">
+      <span class="pill" id="soundState">Son à activer</span>
+      <button type="button" class="btn-ghost" id="exactBtn" hidden>Autoriser les alarmes exactes</button>
+      <button type="button" class="btn-ghost" id="testBtn">Tester la sonnerie</button>
+      <button type="button" class="btn-ghost web-only" id="wakeBtn" aria-pressed="false">Garder l'écran allumé</button>
+    </div>
+  </header>
+
+  <section class="panel" aria-labelledby="formTitle">
+    <h2 id="formTitle">Nouveau réveil</h2>
+    <form id="form" autocomplete="off">
+      <div class="field">
+        <label for="timeInput">Heure</label>
+        <input type="time" id="timeInput" required>
+      </div>
+      <div class="field">
+        <label for="labelInput">Chose à faire</label>
+        <input type="text" id="labelInput" maxlength="60" placeholder="Ex. Appeler le dentiste" required>
+      </div>
+      <fieldset>
+        <legend>Répéter</legend>
+        <div class="days" id="days"></div>
+      </fieldset>
+      <p class="hint">Sans jour choisi, le réveil sonne une seule fois.</p>
+      <div class="actions">
+        <button type="submit" class="btn-main" id="submitBtn">Ajouter le réveil</button>
+        <button type="button" class="btn-ghost" id="cancelBtn" hidden>Annuler</button>
+      </div>
+    </form>
+  </section>
+
+  <section aria-labelledby="listTitle">
+    <h2 id="listTitle">Mes réveils</h2>
+    <ul id="list"></ul>
+    <p class="empty" id="empty" hidden>Aucun réveil. Ajoutez une heure et la chose à faire, elle s'affichera et sera lue à voix haute à la sonnerie.</p>
+  </section>
+
+  <p class="note" id="note">Gardez cette page ouverte pour que les réveils sonnent. Ils sont enregistrés sur cet appareil, dans ce navigateur.</p>
+</main>
+
+<div class="ring" id="ring" role="alertdialog" aria-modal="true" aria-labelledby="ringLabel" hidden>
+  <div class="ring-inner">
+    <p class="ring-time" id="ringTime"></p>
+    <h2 class="ring-label" id="ringLabel"></h2>
+    <p class="ring-more" id="ringMore" hidden></p>
+    <div class="ring-actions">
+      <button type="button" class="ring-stop" id="stopBtn">C'est fait</button>
+      <button type="button" class="ring-snooze" id="snoozeBtn">Reporter de 5 min</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var KEY = 'reveil-taches-v1';
+  var CHANNEL = 'reveil-taches';
+  var DAY_NAMES = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+  var DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+  var DAY_INITIAL = { 1: 'L', 2: 'M', 3: 'M', 4: 'J', 5: 'V', 6: 'S', 0: 'D' };
+  var DAY_FULL = { 1: 'lundi', 2: 'mardi', 3: 'mercredi', 4: 'jeudi', 5: 'vendredi', 6: 'samedi', 0: 'dimanche' };
+
+  function $(id) { return document.getElementById(id); }
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function noop() {}
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+  /* ---------- Application Android (Capacitor) ou simple page web ---------- */
+  var Cap = window.Capacitor;
+  var NATIVE = false;
+  try { NATIVE = !!(Cap && typeof Cap.isNativePlatform === 'function' && Cap.isNativePlatform()); } catch (e) {}
+  var LN = null;
+  if (NATIVE) {
+    document.documentElement.classList.add('native');
+    try { LN = (Cap.Plugins && Cap.Plugins.LocalNotifications) || Cap.registerPlugin('LocalNotifications'); } catch (e) {}
+    $('note').textContent = 'Les réveils sonnent à l’heure même si l’application est fermée ou l’écran verrouillé. Pour plus de fiabilité, retirez l’application de l’économie de batterie dans les réglages d’Android.';
+    $('testBtn').textContent = 'Tester dans 5 s';
+    $('soundState').textContent = 'Vérification des notifications…';
+  }
+
+  var alarms = load() || [
+    { id: 'ex1', n: 1, time: '07:30', label: 'Prendre mes médicaments', days: [1, 2, 3, 4, 5], on: true, example: true },
+    { id: 'ex2', n: 2, time: '18:00', label: 'Séance de sport', days: [1, 3, 5], on: true, example: true }
+  ];
+  function nextN() { var m = 0; alarms.forEach(function (a) { if (a.n > m) m = a.n; }); return m + 1; }
+  alarms.forEach(function (a) { if (!a.n) a.n = nextN(); });
+
+  var editingId = null;
+  var ringing = [];
+  var beepTimer = null, speakTimer = null;
+  var audioCtx = null;
+  var wakeLock = null, wantWake = false;
+  var lastMinute = '';
+  var syncChain = Promise.resolve();
+
+  function load() {
+    try { var s = localStorage.getItem(KEY); if (s) { var v = JSON.parse(s); if (Array.isArray(v)) return v; } } catch (e) {}
+    return null;
+  }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(alarms)); } catch (e) {} }
+  function commit() { save(); render(); syncNative(); }
+  function findAlarm(id) { return alarms.filter(function (x) { return x.id === id; })[0]; }
+
+  /* ---------- Jours ---------- */
+  var daysBox = $('days');
+  DAY_ORDER.forEach(function (d) {
+    var l = document.createElement('label');
+    l.className = 'day';
+    l.innerHTML = '<input type="checkbox" id="day-' + d + '" value="' + d + '"><span title="' + DAY_FULL[d] + '" aria-label="' + DAY_FULL[d] + '">' + DAY_INITIAL[d] + '</span>';
+    daysBox.appendChild(l);
+  });
+  function getDays() { return DAY_ORDER.filter(function (d) { return $('day-' + d).checked; }); }
+  function setDays(arr) { DAY_ORDER.forEach(function (d) { $('day-' + d).checked = arr.indexOf(d) !== -1; }); }
+  function daysText(days) {
+    if (!days.length) return 'Une seule fois';
+    if (days.length === 7) return 'Tous les jours';
+    var wk = [1, 2, 3, 4, 5];
+    if (days.length === 5 && wk.every(function (d) { return days.indexOf(d) !== -1; })) return 'Du lundi au vendredi';
+    return DAY_ORDER.filter(function (d) { return days.indexOf(d) !== -1; }).map(function (d) { return DAY_NAMES[d]; }).join(', ');
+  }
+
+  /* ---------- Prochaine sonnerie ---------- */
+  function nextRing(a, now) {
+    if (a.snoozeUntil) return new Date(a.snoozeUntil);
+    var p = a.time.split(':');
+    for (var off = 0; off < 8; off++) {
+      var c = new Date(now.getFullYear(), now.getMonth(), now.getDate() + off, +p[0], +p[1], 0, 0);
+      if (c.getTime() <= now.getTime()) continue;
+      if (!a.days.length || a.days.indexOf(c.getDay()) !== -1) return c;
+    }
+    return null;
+  }
+  function fmtDelta(ms) {
+    var m = Math.max(1, Math.round(ms / 60000));
+    var d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
+    if (d > 0) return d + ' j ' + h + ' h';
+    if (h > 0) return h + ' h ' + pad(mm);
+    return mm + ' min';
+  }
+  function nextText(a, now) {
+    if (!a.on) return 'Désactivé';
+    var n = nextRing(a, now);
+    if (!n) return 'Aucune sonnerie prévue';
+    return 'Sonne dans ' + fmtDelta(n.getTime() - now.getTime());
+  }
+
+  /* ---------- Rendu ---------- */
+  function render() {
+    var list = $('list');
+    var now = new Date();
+    var sorted = alarms.slice().sort(function (a, b) { return a.time.localeCompare(b.time); });
+    $('empty').hidden = alarms.length > 0;
+    list.innerHTML = sorted.map(function (a) {
+      return '<li class="alarm' + (a.on ? '' : ' off') + '" data-id="' + esc(a.id) + '">' +
+        '<div class="when">' + esc(a.time) + '</div>' +
+        '<div class="what">' + esc(a.label) + (a.example ? '<span class="tag">Exemple</span>' : '') + '</div>' +
+        '<button type="button" class="switch" role="switch" aria-checked="' + a.on + '" aria-label="Activer le réveil de ' + esc(a.time) + ' : ' + esc(a.label) + '" data-act="toggle"></button>' +
+        '<div class="meta">' + esc(daysText(a.days)) + ' · <span data-next="' + esc(a.id) + '">' + esc(nextText(a, now)) + '</span></div>' +
+        '<div class="row-actions"><button type="button" class="link" data-act="edit">Modifier</button><button type="button" class="link danger" data-act="delete">Supprimer</button></div>' +
+        '</li>';
+    }).join('');
+  }
+  function refreshNext() {
+    var now = new Date();
+    alarms.forEach(function (a) {
+      var el = document.querySelector('[data-next="' + a.id + '"]');
+      if (el) el.textContent = nextText(a, now);
+    });
+  }
+
+  $('list').addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    var id = btn.closest('li').getAttribute('data-id');
+    var a = findAlarm(id);
+    if (!a) return;
+    var act = btn.getAttribute('data-act');
+    if (act === 'toggle') { a.on = !a.on; a.snoozeUntil = null; a.at = null; commit(); }
+    else if (act === 'delete') { alarms = alarms.filter(function (x) { return x.id !== id; }); if (editingId === id) resetForm(); commit(); }
+    else if (act === 'edit') {
+      editingId = id;
+      $('timeInput').value = a.time; $('labelInput').value = a.label; setDays(a.days);
+      $('submitBtn').textContent = 'Enregistrer'; $('cancelBtn').hidden = false;
+      $('formTitle').textContent = 'Modifier le réveil';
+      $('labelInput').focus();
+      $('form').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  });
+
+  /* ---------- Formulaire ---------- */
+  function defaultTime() {
+    var d = new Date(Date.now() + 2 * 60000);
+    return pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  function resetForm() {
+    editingId = null;
+    $('timeInput').value = defaultTime(); $('labelInput').value = ''; setDays([]);
+    $('submitBtn').textContent = 'Ajouter le réveil'; $('cancelBtn').hidden = true;
+    $('formTitle').textContent = 'Nouveau réveil';
+  }
+  $('cancelBtn').addEventListener('click', resetForm);
+  $('form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    ensureAudio();
+    var time = $('timeInput').value;
+    var label = $('labelInput').value.trim();
+    if (!time || !label) return;
+    if (editingId) {
+      var a = findAlarm(editingId);
+      if (a) { a.time = time; a.label = label; a.days = getDays(); a.on = true; a.lastKey = null; a.snoozeUntil = null; a.at = null; delete a.example; }
+    } else {
+      alarms.push({ id: Date.now().toString(36), n: nextN(), time: time, label: label, days: getDays(), on: true });
+    }
+    resetForm(); commit();
+  });
+
+  /* ---------- Son et voix (page web) ---------- */
+  function setState(text, ok) {
+    var el = $('soundState');
+    el.textContent = text;
+    el.className = 'pill' + (ok ? ' ok' : '');
+  }
+  function ensureAudio() {
+    if (NATIVE) return;
+    try {
+      if (!audioCtx) { var C = window.AudioContext || window.webkitAudioContext; if (C) audioCtx = new C(); }
+      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) {}
+    if (audioCtx && audioCtx.state === 'running') setState('Son prêt', true);
+    else setState('Son à activer : touchez la page', false);
+  }
+  function beep(at, freq) {
+    if (!audioCtx) return;
+    var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'square'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(0.25, at + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.16);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(at); o.stop(at + 0.18);
+  }
+  function beepPattern() {
+    try {
+      ensureAudio();
+      if (!audioCtx) return;
+      var t = audioCtx.currentTime;
+      beep(t, 880); beep(t + 0.25, 880); beep(t + 0.5, 1175);
+    } catch (e) {}
+  }
+  function speak(text) {
+    try {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = 'fr-FR';
+      window.speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+  function ringText() { return ringing.map(function (a) { return a.label; }).join('. Puis : '); }
+  document.addEventListener('pointerdown', ensureAudio);
+  document.addEventListener('keydown', ensureAudio);
+
+  $('testBtn').addEventListener('click', function () {
+    var label = $('labelInput').value.trim() || 'Test du réveil';
+    if (NATIVE && LN) {
+      Promise.resolve().then(function () {
+        return LN.schedule({ notifications: [{ id: 2147000000, title: label, body: 'Sonnerie de test', channelId: CHANNEL, extra: {}, schedule: { at: new Date(Date.now() + 5000), allowWhileIdle: true } }] });
+      }).then(function () { setState('Test dans 5 secondes. Vous pouvez verrouiller l’écran.', true); })
+        .catch(function () { setState('Le test n’a pas pu être programmé', false); });
+      return;
+    }
+    ensureAudio();
+    beepPattern();
+    setTimeout(function () { speak('Voici comment sonnera votre réveil. Chose à faire : ' + label); }, 1000);
+  });
+
+  /* ---------- Écran allumé (page web) ---------- */
+  function requestWake() {
+    try {
+      if (!wantWake || !navigator.wakeLock || document.visibilityState !== 'visible') return;
+      navigator.wakeLock.request('screen').then(function (l) { wakeLock = l; l.addEventListener('release', function () { wakeLock = null; }); }).catch(noop);
+    } catch (e) {}
+  }
+  $('wakeBtn').addEventListener('click', function () {
+    wantWake = !wantWake;
+    this.setAttribute('aria-pressed', String(wantWake));
+    if (wantWake) requestWake();
+    else if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+  });
+
+  /* ---------- Notifications Android ---------- */
+  function checkNative() {
+    if (!LN) { setState('Plugin de notifications introuvable', false); return Promise.resolve(); }
+    var notifOk = false, exactOk = true;
+    return Promise.resolve().then(function () { return LN.checkPermissions(); })
+      .then(function (p) { return p.display === 'granted' ? p : LN.requestPermissions(); })
+      .then(function (p) {
+        notifOk = p.display === 'granted';
+        return Promise.resolve().then(function () { return LN.checkExactNotificationSetting(); }).catch(function () { return null; });
+      })
+      .then(function (ex) {
+        exactOk = !ex || ex.exact_alarm !== 'denied';
+        $('exactBtn').hidden = exactOk;
+        if (!notifOk) setState('Notifications refusées : autorisez-les dans les réglages d’Android', false);
+        else if (!exactOk) setState('Autorisez les alarmes exactes pour sonner à l’heure', false);
+        else setState('Notifications prêtes', true);
+      })
+      .catch(function () { setState('Notifications indisponibles', false); });
+  }
+  $('exactBtn').addEventListener('click', function () {
+    if (!LN) return;
+    Promise.resolve().then(function () { return LN.changeExactNotificationSetting(); }).catch(noop).then(checkNative);
+  });
+
+  function syncNative() {
+    if (!LN) return;
+    syncChain = syncChain.then(doSync).catch(function () { setState('Impossible de programmer les réveils', false); });
+  }
+  function doSync() {
+    return Promise.resolve().then(function () { return LN.getPending(); }).then(function (pend) {
+      var ids = (pend && pend.notifications ? pend.notifications : []).map(function (n) { return { id: n.id }; });
+      return ids.length ? LN.cancel({ notifications: ids }) : null;
+    }).then(function () {
+      var now = new Date(), list = [];
+      alarms.forEach(function (a) {
+        if (!a.on) return;
+        var p = a.time.split(':');
+        var h = +p[0], m = +p[1];
+        var base = { title: a.label, body: 'Il est ' + a.time, channelId: CHANNEL, extra: { alarmId: a.id } };
+        if (a.days.length) {
+          a.days.forEach(function (d) {
+            list.push(Object.assign({ id: a.n * 10 + d, schedule: { on: { weekday: d + 1, hour: h, minute: m }, allowWhileIdle: true } }, base));
+          });
+        } else {
+          var at = null;
+          if (a.at && a.at > Date.now()) at = new Date(a.at);
+          else if (!a.at) {
+            at = nextRing({ time: a.time, days: [], snoozeUntil: null }, now);
+            if (at) a.at = at.getTime();
+          }
+          if (at) list.push(Object.assign({ id: a.n * 10 + 7, schedule: { at: at, allowWhileIdle: true } }, base));
+        }
+        if (a.snoozeUntil && a.snoozeUntil > Date.now()) {
+          list.push({ id: a.n * 10 + 8, title: a.label, body: 'Rappel reporté · ' + a.time, channelId: CHANNEL, extra: { alarmId: a.id }, schedule: { at: new Date(a.snoozeUntil), allowWhileIdle: true } });
+        }
+      });
+      save();
+      return list.length ? LN.schedule({ notifications: list }) : null;
+    });
+  }
+  function finalizeOneShots() {
+    var now = Date.now(), changed = false;
+    alarms.forEach(function (a) {
+      var isRinging = ringing.some(function (x) { return x.id === a.id; });
+      if (a.on && !a.days.length && a.at && a.at <= now && (!a.snoozeUntil || a.snoozeUntil <= now) && !isRinging) { a.on = false; changed = true; }
+    });
+    if (changed) { save(); render(); }
+  }
+  function onNotif(n) {
+    var id = n && n.extra && n.extra.alarmId;
+    var a = id ? findAlarm(id) : null;
+    if (a) startRing(a);
+  }
+  function setupNative() {
+    if (!LN) { setState('Plugin de notifications introuvable', false); return; }
+    var made = Promise.resolve();
+    try {
+      made = LN.createChannel({ id: CHANNEL, name: 'Réveils', description: 'Sonnerie des réveils', importance: 5, visibility: 1, sound: 'alarm.wav', vibration: true, lights: true });
+    } catch (e) {}
+    try {
+      LN.addListener('localNotificationReceived', onNotif);
+      LN.addListener('localNotificationActionPerformed', function (ev) { onNotif(ev && ev.notification); });
+    } catch (e) {}
+    Promise.resolve(made).catch(noop).then(checkNative).then(function () { finalizeOneShots(); syncNative(); });
+  }
+
+  /* ---------- Sonnerie ---------- */
+  function showRing() {
+    var first = ringing[0];
+    var now = new Date();
+    $('ringTime').textContent = 'Il est ' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+    $('ringLabel').textContent = first.label;
+    var more = $('ringMore');
+    if (ringing.length > 1) {
+      more.hidden = false;
+      more.textContent = 'Aussi : ' + ringing.slice(1).map(function (a) { return a.label; }).join(' · ');
+    } else more.hidden = true;
+    var wasHidden = $('ring').hidden;
+    $('ring').hidden = false;
+    if (wasHidden) $('stopBtn').focus();
+  }
+  function startRing(a) {
+    if (ringing.some(function (x) { return x.id === a.id; })) return;
+    ringing.push(a);
+    showRing();
+    if (!speakTimer) {
+      if (!NATIVE) { beepPattern(); beepTimer = setInterval(beepPattern, 1500); }
+      setTimeout(function () { speak(ringText()); }, NATIVE ? 800 : 1700);
+      speakTimer = setInterval(function () { speak(ringText()); }, 10000);
+    }
+  }
+  function stopRing() {
+    clearInterval(beepTimer); clearInterval(speakTimer);
+    beepTimer = null; speakTimer = null;
+    try { window.speechSynthesis.cancel(); } catch (e) {}
+    $('ring').hidden = true;
+    if (LN) { Promise.resolve().then(function () { return LN.removeAllDeliveredNotifications(); }).catch(noop); }
+  }
+  $('stopBtn').addEventListener('click', function () {
+    ringing.forEach(function (a) { a.snoozeUntil = null; if (!a.days.length) a.on = false; });
+    ringing = []; stopRing(); commit();
+  });
+  $('snoozeBtn').addEventListener('click', function () {
+    ringing.forEach(function (a) { a.snoozeUntil = Date.now() + 5 * 60000; });
+    ringing = []; stopRing(); commit();
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') return;
+    if (NATIVE) { finalizeOneShots(); checkNative(); refreshNext(); }
+    else requestWake();
+  });
+
+  /* ---------- Horloge ---------- */
+  function tick() {
+    var now = new Date();
+    $('clock').innerHTML = pad(now.getHours()) + ':' + pad(now.getMinutes()) + '<span class="sec">:' + pad(now.getSeconds()) + '</span>';
+    var key = now.getFullYear() + '-' + now.getMonth() + '-' + now.getDate() + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+    var hm = pad(now.getHours()) + ':' + pad(now.getMinutes());
+    if (!NATIVE) {
+      var changed = false;
+      alarms.forEach(function (a) {
+        if (!a.on) return;
+        if (a.snoozeUntil && now.getTime() >= a.snoozeUntil) { a.snoozeUntil = null; changed = true; startRing(a); return; }
+        if (a.time === hm && a.lastKey !== key && (!a.days.length || a.days.indexOf(now.getDay()) !== -1)) {
+          a.lastKey = key; changed = true; startRing(a);
+        }
+      });
+      if (changed) save();
+    }
+    if (key !== lastMinute) {
+      lastMinute = key;
+      $('date').textContent = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      refreshNext();
+    }
+  }
+
+  resetForm();
+  render();
+  tick();
+  setInterval(tick, 500);
+  if (NATIVE) setupNative();
+})();
+</script>
+</body>
+</html>
