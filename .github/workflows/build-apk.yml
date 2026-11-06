@@ -20,7 +20,19 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - uses: android-actions/setup-android@v3
+
+      - name: Préparer la page web
+        run: |
+          test -f index.html || { echo "index.html est introuvable à la racine du dépôt"; exit 1; }
+          test -f package.json || { echo "package.json est introuvable à la racine du dépôt"; exit 1; }
+          test -f capacitor.config.json || { echo "capacitor.config.json est introuvable à la racine du dépôt"; exit 1; }
+          mkdir -p www
+          cp index.html www/index.html
 
       - name: Installer les dépendances
         run: npm install
@@ -28,8 +40,118 @@ jobs:
       - name: Créer le projet Android
         run: npx cap add android
 
-      - name: Ajouter autorisations, sonnerie et icônes
-        run: node scripts/patch-android.mjs
+      - name: Générer la sonnerie et les icônes
+        run: |
+          pip install pillow
+          python3 - <<'PY'
+          import math, os, struct, wave
+          from PIL import Image, ImageDraw
+
+          RES = 'android/app/src/main/res'
+
+          # Sonnerie : 9 secondes, trois bips répétés chaque seconde
+          os.makedirs(RES + '/raw', exist_ok=True)
+          rate = 22050
+          beeps = [(0.00, 880), (0.22, 880), (0.44, 1175)]
+          frames = bytearray()
+          for i in range(int(rate * 9.0)):
+              t = i / rate
+              ph = t % 1.0
+              v = 0.0
+              for start, f in beeps:
+                  if start <= ph < start + 0.15:
+                      lt = ph - start
+                      env = min(1.0, lt / 0.01) * min(1.0, (0.15 - lt) / 0.03)
+                      v += env * (math.sin(2 * math.pi * f * t) * 0.7 + math.sin(2 * math.pi * 2 * f * t) * 0.2)
+              frames += struct.pack('<h', int(max(-1, min(1, v * 0.8)) * 32767))
+          with wave.open(RES + '/raw/alarm.wav', 'wb') as w:
+              w.setnchannels(1)
+              w.setsampwidth(2)
+              w.setframerate(rate)
+              w.writeframes(bytes(frames))
+
+          # Icônes
+          GREEN = (13, 115, 87, 255)
+          WHITE = (255, 255, 255, 255)
+
+          def clock_layer(px):
+              S = 4
+              n = px * S
+              im = Image.new('RGBA', (n, n), (0, 0, 0, 0))
+              d = ImageDraw.Draw(im)
+              u = n / 108.0
+              def c(x, y, r, **k):
+                  d.ellipse([(x - r) * u, (y - r) * u, (x + r) * u, (y + r) * u], **k)
+              c(36, 33, 8, fill=WHITE)
+              c(72, 33, 8, fill=WHITE)
+              c(54, 58, 23, fill=WHITE)
+              c(54, 58, 18.5, fill=GREEN)
+              d.line([54 * u, 58 * u, 54 * u, 46 * u], fill=WHITE, width=int(3.2 * u))
+              d.line([54 * u, 58 * u, 62 * u, 62 * u], fill=WHITE, width=int(3.2 * u))
+              c(54, 58, 2.2, fill=WHITE)
+              d.line([40 * u, 77 * u, 34 * u, 84 * u], fill=WHITE, width=int(3.4 * u))
+              d.line([68 * u, 77 * u, 74 * u, 84 * u], fill=WHITE, width=int(3.4 * u))
+              return im.resize((px, px), Image.LANCZOS)
+
+          def legacy(px, round_=False):
+              base = clock_layer(432)
+              bg = Image.new('RGBA', (432, 432), GREEN)
+              bg.alpha_composite(base)
+              crop = bg.crop((54, 54, 378, 378)).resize((px, px), Image.LANCZOS)
+              mask = Image.new('L', (px * 4, px * 4), 0)
+              md = ImageDraw.Draw(mask)
+              if round_:
+                  md.ellipse([0, 0, px * 4 - 1, px * 4 - 1], fill=255)
+              else:
+                  md.rounded_rectangle([0, 0, px * 4 - 1, px * 4 - 1], radius=int(px * 4 * 0.22), fill=255)
+              mask = mask.resize((px, px), Image.LANCZOS)
+              out = Image.new('RGBA', (px, px), (0, 0, 0, 0))
+              out.paste(crop, (0, 0), mask)
+              return out
+
+          dens = {'mdpi': (48, 108), 'hdpi': (72, 162), 'xhdpi': (96, 216), 'xxhdpi': (144, 324), 'xxxhdpi': (192, 432)}
+          for name, (leg, fg) in dens.items():
+              d = RES + '/mipmap-' + name
+              os.makedirs(d, exist_ok=True)
+              legacy(leg).save(d + '/ic_launcher.png')
+              legacy(leg, True).save(d + '/ic_launcher_round.png')
+              clock_layer(fg).save(d + '/ic_launcher_foreground.png')
+          os.makedirs(RES + '/values', exist_ok=True)
+          with open(RES + '/values/ic_launcher_background.xml', 'w', encoding='utf-8') as fh:
+              fh.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#0D7357</color>\n</resources>\n')
+          print('Sonnerie et icônes générées')
+          PY
+
+      - name: Ajouter les autorisations Android
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const p = 'android/app/src/main/AndroidManifest.xml';
+          let xml = fs.readFileSync(p, 'utf8');
+          const perms = [
+            '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+            '<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />',
+            '<uses-permission android:name="android.permission.USE_EXACT_ALARM" />',
+            '<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />',
+            '<uses-permission android:name="android.permission.VIBRATE" />',
+            '<uses-permission android:name="android.permission.WAKE_LOCK" />'
+          ];
+          const missing = perms.filter(function (l) {
+            return xml.indexOf(l.match(/android:name="([^"]+)"/)[1]) === -1;
+          });
+          if (missing.length) {
+            xml = xml.replace(/<application\b/, missing.join('\n    ') + '\n\n    <application');
+          }
+          xml = xml.replace(/<activity\b[^>]*>/, function (tag) {
+            if (tag.indexOf('MainActivity') === -1) return tag;
+            let t = tag;
+            if (t.indexOf('android:showWhenLocked') === -1) t = t.replace('<activity', '<activity android:showWhenLocked="true"');
+            if (t.indexOf('android:turnScreenOn') === -1) t = t.replace('<activity', '<activity android:turnScreenOn="true"');
+            return t;
+          });
+          fs.writeFileSync(p, xml);
+          console.log('Autorisations ajoutées');
+          JS
 
       - name: Copier la page web dans l'application
         run: npx cap sync android
