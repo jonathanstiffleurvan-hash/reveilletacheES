@@ -24,8 +24,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - uses: android-actions/setup-android@v3
-
       - name: Préparer la page web
         run: |
           test -f index.html || { echo "index.html est introuvable à la racine du dépôt"; exit 1; }
